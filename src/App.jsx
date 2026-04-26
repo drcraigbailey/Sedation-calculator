@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-// test
 
 const ALL_DRUGS = [
   { id: "med", name: "Medetomidine", calc: (w) => (0.2 * w) / 10 },
