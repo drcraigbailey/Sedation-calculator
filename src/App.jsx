@@ -99,7 +99,17 @@ const toggleDrug = (id) => {
     // LOCK batch + broach into record
     const lockedMeta = {};
 
-    doses.forEach(d => {
+    doses
+  .filter(d => activeDrugs.includes(d.id)) // 👈 ONLY active drugs
+  .forEach(d => {
+    const current = parseFloat(updatedStock[d.id]?.total || 0);
+    const used = parseFloat(d.volume);
+
+    updatedStock[d.id] = {
+      ...updatedStock[d.id],
+      total: (current - used).toFixed(2),
+    };
+  });
       const current = parseFloat(updatedStock[d.id]?.total || 0);
       const used = parseFloat(d.volume);
 
