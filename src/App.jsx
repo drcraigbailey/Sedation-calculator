@@ -65,6 +65,14 @@ export default function App() {
     setOverrides(prev => ({ ...prev, [id]: value }));
   };
 
+const toggleDrug = (id) => {
+  setActiveDrugs(prev =>
+    prev.includes(id)
+      ? prev.filter(d => d !== id)
+      : [...prev, id]
+  );
+};
+
   const handleStockChange = (id, field, value) => {
     setStock(prev => ({
       ...prev,
