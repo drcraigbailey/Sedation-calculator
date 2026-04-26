@@ -18,6 +18,10 @@ export default function App() {
   const [overrides, setOverrides] = useState({});
   const [stock, setStock] = useState({});
 
+  const [activeDrugs, setActiveDrugs] = useState(
+  ALL_DRUGS.map(d => d.id)
+);
+
   useEffect(() => {
     const saved = localStorage.getItem("sedationRecords");
     if (saved) setRecords(JSON.parse(saved));
