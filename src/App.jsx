@@ -7,24 +7,20 @@ const ALL_DRUGS = [
   { id: "acp", name: "ACP", calc: (w) => (0.06 * w) / 2 },
 ];
 
+const DAYS_WARNING = 28;
+const DAYS_DANGER = 35;
+
 export default function App() {
   const [weight, setWeight] = useState("");
   const [patient, setPatient] = useState("");
   const [ownerSurname, setOwnerSurname] = useState("");
   const [records, setRecords] = useState([]);
-  const [search, setSearch] = useState("");
-  const [activeDrugs, setActiveDrugs] = useState(ALL_DRUGS.map(d => d.id));
-
-  // per-drug manual override volumes
   const [overrides, setOverrides] = useState({});
-
-  // stock tracking
   const [stock, setStock] = useState({});
 
   useEffect(() => {
     const saved = localStorage.getItem("sedationRecords");
     if (saved) setRecords(JSON.parse(saved));
-
     const savedStock = localStorage.getItem("drugStock");
     if (savedStock) setStock(JSON.parse(savedStock));
   }, []);
@@ -37,19 +33,22 @@ export default function App() {
     localStorage.setItem("drugStock", JSON.stringify(stock));
   }, [stock]);
 
-  const toggleDrug = (id) => {
-    setActiveDrugs(prev =>
-      prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]
-    );
+  const daysSince = (date) => {
+    if (!date) return 0;
+    return Math.floor((new Date() - new Date(date)) / (1000 * 60 * 60 * 24));
   };
 
-  const selectedDrugs = ALL_DRUGS.filter(d => activeDrugs.includes(d.id));
+  const getStatusColor = (date) => {
+    const days = daysSince(date);
+    if (days >= DAYS_DANGER) return "#e53935";
+    if (days >= DAYS_WARNING) return "#fb8c00";
+    return "#4caf50";
+  };
 
   const calculateDoses = () => {
-    return selectedDrugs.map((drug) => {
+    return ALL_DRUGS.map((drug) => {
       const calculated = drug.calc(parseFloat(weight) || 0).toFixed(2);
       const overridden = overrides[drug.id];
-
       return {
         id: drug.id,
         name: drug.name,
@@ -72,30 +71,35 @@ export default function App() {
     }));
   };
 
+  const handleDiscard = (id) => {
+    setStock(prev => ({
+      ...prev,
+      [id]: { batch: "", broach: "", total: "" }
+    }));
+  };
+
   const handleSave = () => {
-    if (!patient || !ownerSurname) return alert("Enter patient and owner surname");
+    if (!patient || !ownerSurname) return alert("Enter patient + owner");
 
     const doses = calculateDoses();
-
-    // subtract from stock
     const updatedStock = { ...stock };
+
+    // LOCK batch + broach into record
+    const lockedMeta = {};
 
     doses.forEach(d => {
       const current = parseFloat(updatedStock[d.id]?.total || 0);
       const used = parseFloat(d.volume);
 
-      if (!isNaN(current)) {
-        const remaining = current - used;
-        updatedStock[d.id] = {
-          ...updatedStock[d.id],
-          total: remaining.toFixed(2),
-        };
+      updatedStock[d.id] = {
+        ...updatedStock[d.id],
+        total: (current - used).toFixed(2),
+      };
 
-        const initial = parseFloat(updatedStock[d.id]?.initial || current);
-        if (initial > 0 && remaining / initial < 0.29) {
-          alert(`${d.name} low: ${remaining.toFixed(2)} ml remaining`);
-        }
-      }
+      lockedMeta[d.id] = {
+        batch: updatedStock[d.id]?.batch || "",
+        broach: updatedStock[d.id]?.broach || "",
+      };
     });
 
     setStock(updatedStock);
@@ -105,138 +109,215 @@ export default function App() {
       ownerSurname,
       weight,
       doses,
+      meta: lockedMeta,
       date: new Date().toLocaleString(),
     };
 
     setRecords([newRecord, ...records]);
+
+    // fast reset for next patient
     setOverrides({});
+    setWeight("");
+    setPatient("");
+    setOwnerSurname("");
   };
 
- const handleDelete = (index) => {
-  const recordToDelete = records[index];
+  const handleDelete = (index) => {
+    const rec = records[index];
+    const updatedStock = { ...stock };
 
-  const updatedStock = { ...stock };
+    rec.doses.forEach(d => {
+      const current = parseFloat(updatedStock[d.id]?.total || 0);
+      const restore = parseFloat(d.volume);
+      updatedStock[d.id] = {
+        ...updatedStock[d.id],
+        total: (current + restore).toFixed(2),
+      };
+    });
 
-  // add volumes back into stock
-  recordToDelete.doses.forEach(d => {
-    const current = parseFloat(updatedStock[d.id]?.total || 0);
-    const restore = parseFloat(d.volume);
+    setStock(updatedStock);
+    setRecords(records.filter((_, i) => i !== index));
+  };
 
-    updatedStock[d.id] = {
-      ...updatedStock[d.id],
-      total: (current + restore).toFixed(2),
-    };
-  });
+  const downloadCSV = () => {
+    const headers = ["Patient","Owner","Weight","Drug","Volume","Batch","Broach","Date"];
+    const rows = [];
 
-  setStock(updatedStock);
+    records.forEach(r => {
+      r.doses.forEach(d => {
+        rows.push([
+          r.patient,
+          r.ownerSurname,
+          r.weight,
+          d.name,
+          d.volume,
+          r.meta?.[d.id]?.batch || "",
+          r.meta?.[d.id]?.broach || "",
+          r.date
+        ]);
+      });
+    });
 
-  const updated = records.filter((_, i) => i !== index);
-  setRecords(updated);
-};
+    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
 
-  const filteredRecords = records.filter(r =>
-    `${r.patient} ${r.ownerSurname}`.toLowerCase().includes(search.toLowerCase())
-  );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sedation-report.csv";
+    a.click();
+  };
 
   return (
-    <div style={{ padding: 20, fontFamily: "Arial", background: "#f1f3f4" }}>
+    <div style={appBg}>
 
-      <div style={{ maxWidth: 500, margin: "0 auto", background: "white", padding: 20, borderRadius: 10 }}>
-        <h1>Sedation Calculator</h1>
+      <div style={card}>
+        <h2 style={title}>Sedation</h2>
 
-        <label>Patient Name</label>
-        <input value={patient} onChange={(e) => setPatient(e.target.value)} style={{ width: "100%", padding: 8, marginBottom: 10 }} />
+        <input placeholder="Patient" value={patient} onChange={(e)=>setPatient(e.target.value)} style={input}/>
+        <input placeholder="Owner" value={ownerSurname} onChange={(e)=>setOwnerSurname(e.target.value)} style={input}/>
+        <input type="number" placeholder="Weight" value={weight} onChange={(e)=>setWeight(e.target.value)} style={input}/>
 
-        <label>Owner Surname</label>
-        <input value={ownerSurname} onChange={(e) => setOwnerSurname(e.target.value)} style={{ width: "100%", padding: 8, marginBottom: 10 }} />
-
-        <label>Weight (kg)</label>
-        <input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} style={{ width: "100%", padding: 8, marginBottom: 15 }} />
-
-        <div style={{ marginBottom: 15 }}>
-          <strong>Select Drugs:</strong>
-          {ALL_DRUGS.map(d => (
-            <div key={d.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={activeDrugs.includes(d.id)}
-                  onChange={() => toggleDrug(d.id)}
-                /> {d.name}
-              </label>
-            </div>
-          ))}
-        </div>
-
-        {calculateDoses().map((drug) => (
-          <div key={drug.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span>{drug.name}</span>
+        {calculateDoses().map(d => (
+          <div key={d.id} style={drugRow}>
+            <span>{d.name}</span>
             <input
               type="number"
-              value={drug.volume}
-              onChange={(e) => handleOverride(drug.id, e.target.value)}
-              style={{ width: 80 }}
+              value={d.volume}
+              onChange={(e)=>handleOverride(d.id,e.target.value)}
+              style={dose}
             />
           </div>
         ))}
 
-        <button onClick={handleSave} style={{ marginTop: 15, padding: 10, width: "100%" }}>
-          Save Record
-        </button>
+        <button onClick={handleSave} style={primaryBtn}>Save</button>
       </div>
 
-      {/* STOCK SECTION */}
-      <div style={{ maxWidth: 500, margin: "20px auto", background: "white", padding: 20, borderRadius: 10 }}>
-        <h2>Drug Stock</h2>
+      <div style={card}>
+        <h3>Stock</h3>
         {ALL_DRUGS.map(d => (
-          <div key={d.id} style={{ marginBottom: 10 }}>
+          <div key={d.id} style={{...stockRow, borderLeft:`4px solid ${getStatusColor(stock[d.id]?.broach)}`}}>
             <strong>{d.name}</strong>
-            <input
-              placeholder="Batch"
-              value={stock[d.id]?.batch || ""}
-              onChange={(e) => handleStockChange(d.id, "batch", e.target.value)}
-              style={{ width: "100%", marginBottom: 5 }}
-            />
-            <input
-              type="number"
-              placeholder="Total ml"
-              value={stock[d.id]?.total || ""}
-              onChange={(e) => handleStockChange(d.id, "total", e.target.value)}
-              style={{ width: "100%" }}
-            />
+            <input placeholder="Batch" value={stock[d.id]?.batch || ""} onChange={(e)=>handleStockChange(d.id,"batch",e.target.value)} style={input}/>
+            <input type="date" value={stock[d.id]?.broach || ""} onChange={(e)=>handleStockChange(d.id,"broach",e.target.value)} style={input}/>
+            <input type="number" placeholder="ml" value={stock[d.id]?.total || ""} onChange={(e)=>handleStockChange(d.id,"total",e.target.value)} style={input}/>
+            <button onClick={()=>handleDiscard(d.id)} style={dangerBtn}>Discard</button>
           </div>
         ))}
       </div>
 
-      {/* RECORDS */}
-      <div style={{ maxWidth: 500, margin: "20px auto" }}>
-        <h2>Saved Patients</h2>
+      <div style={{maxWidth:420,margin:"10px auto"}}>
+        <button onClick={downloadCSV} style={primaryBtn}>Download Report</button>
 
-        <input
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: "100%", padding: 8, marginBottom: 10 }}
-        />
+        {records.map((rec,i)=>(
+          <div key={i} style={recordCard}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <strong>{rec.patient}</strong>
+              <button onClick={()=>handleDelete(i)} style={deleteBtn}>✕</button>
+            </div>
 
-        {filteredRecords.map((rec, i) => (
-          <div key={i} style={{ background: "white", padding: 10, marginBottom: 10 }}>
-            <strong>{rec.patient}</strong> ({rec.ownerSurname}) - {rec.weight} kg
-            <div style={{ fontSize: 12 }}>{rec.date}</div>
-
-            {rec.doses.map((d, idx) => (
-              <div key={idx}>{d.name}: {d.volume} ml</div>
+            {rec.doses.map((d,idx)=>(
+              <div key={idx}>
+                {d.name}: {d.volume} ml 
+                <span style={{fontSize:10,color:"#666"}}>
+                  ({rec.meta?.[d.id]?.batch || ""})
+                </span>
+              </div>
             ))}
-
-            <button
-              onClick={() => handleDelete(i)}
-              style={{ marginTop: 8, background: "#d93025", color: "white", border: "none", padding: 6 }}
-            >
-              Delete
-            </button>
           </div>
         ))}
       </div>
     </div>
   );
 }
+
+// 🎨 STYLES (mobile-native feel)
+
+const appBg = {
+  fontFamily:"Arial",
+  background:"linear-gradient(135deg,#5fa8d3,#3a7ca5)",
+  minHeight:"100vh",
+  padding:10
+};
+
+const card = {
+  maxWidth:420,
+  margin:"10px auto",
+  background:"white",
+  borderRadius:20,
+  padding:18,
+  boxShadow:"0 8px 20px rgba(0,0,0,0.15)"
+};
+
+const title = { textAlign:"center", color:"#3a7ca5" };
+
+const input = {
+  width:"100%",
+  padding:14,
+  marginBottom:8,
+  borderRadius:12,
+  border:"1px solid #ccc",
+  fontSize:16
+};
+
+const drugRow = {
+  display:"flex",
+  justifyContent:"space-between",
+  alignItems:"center",
+  marginBottom:8,
+  padding:10,
+  background:"#f4f7fb",
+  borderRadius:12
+};
+
+const dose = {
+  width:80,
+  padding:10,
+  fontSize:16,
+  borderRadius:10
+};
+
+const stockRow = {
+  display:"flex",
+  flexDirection:"column",
+  marginBottom:10,
+  padding:10,
+  borderRadius:12,
+  background:"#f7f9fb"
+};
+
+const primaryBtn = {
+  width:"100%",
+  padding:16,
+  marginTop:10,
+  background:"#3a7ca5",
+  color:"white",
+  border:"none",
+  borderRadius:14,
+  fontSize:16
+};
+
+const dangerBtn = {
+  background:"#e53935",
+  color:"white",
+  border:"none",
+  borderRadius:10,
+  padding:10,
+  marginTop:5
+};
+
+const deleteBtn = {
+  background:"#e53935",
+  color:"white",
+  border:"none",
+  borderRadius:8,
+  padding:"4px 8px"
+};
+
+const recordCard = {
+  background:"white",
+  padding:14,
+  borderRadius:14,
+  marginBottom:10,
+  boxShadow:"0 4px 10px rgba(0,0,0,0.1)"
+};
