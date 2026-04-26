@@ -112,10 +112,27 @@ export default function App() {
     setOverrides({});
   };
 
-  const handleDelete = (index) => {
-    const updated = records.filter((_, i) => i !== index);
-    setRecords(updated);
-  };
+ const handleDelete = (index) => {
+  const recordToDelete = records[index];
+
+  const updatedStock = { ...stock };
+
+  // add volumes back into stock
+  recordToDelete.doses.forEach(d => {
+    const current = parseFloat(updatedStock[d.id]?.total || 0);
+    const restore = parseFloat(d.volume);
+
+    updatedStock[d.id] = {
+      ...updatedStock[d.id],
+      total: (current + restore).toFixed(2),
+    };
+  });
+
+  setStock(updatedStock);
+
+  const updated = records.filter((_, i) => i !== index);
+  setRecords(updated);
+};
 
   const filteredRecords = records.filter(r =>
     `${r.patient} ${r.ownerSurname}`.toLowerCase().includes(search.toLowerCase())
