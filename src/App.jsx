@@ -190,6 +190,40 @@ const toggleDrug = (id) => {
         <input placeholder="Owner" value={ownerSurname} onChange={(e)=>setOwnerSurname(e.target.value)} style={input}/>
         <input type="number" placeholder="Weight" value={weight} onChange={(e)=>setWeight(e.target.value)} style={input}/>
 
+<div style={{ marginBottom: 12 }}>
+  <strong style={{ fontSize: 14, color: "#3a7ca5" }}>
+    Select Drugs
+  </strong>
+
+  {ALL_DRUGS.map(d => (
+    <div key={d.id} style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 6,
+      padding: 10,
+      background: "#f4f7fb",
+      borderRadius: 10
+    }}>
+      <span>{d.name}</span>
+
+      <button
+        onClick={() => toggleDrug(d.id)}
+        style={{
+          background: activeDrugs.includes(d.id) ? "#3a7ca5" : "#ccc",
+          color: "white",
+          border: "none",
+          borderRadius: 20,
+          padding: "6px 12px",
+          fontSize: 12
+        }}
+      >
+        {activeDrugs.includes(d.id) ? "On" : "Off"}
+      </button>
+    </div>
+  ))}
+</div>
+
       {calculateDoses()
   .filter(d => activeDrugs.includes(d.id))
   .map(d => (
