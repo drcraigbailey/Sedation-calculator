@@ -257,7 +257,8 @@ const input = {
   marginBottom:8,
   borderRadius:12,
   border:"1px solid #ccc",
-  fontSize:16
+  fontSize:16,
+  boxSizing:"border-box" // 👈 ADD THIS LINE
 };
 
 const drugRow = {
