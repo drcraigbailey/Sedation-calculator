@@ -190,7 +190,9 @@ const toggleDrug = (id) => {
         <input placeholder="Owner" value={ownerSurname} onChange={(e)=>setOwnerSurname(e.target.value)} style={input}/>
         <input type="number" placeholder="Weight" value={weight} onChange={(e)=>setWeight(e.target.value)} style={input}/>
 
-        {calculateDoses().map(d => (
+      {calculateDoses()
+  .filter(d => activeDrugs.includes(d.id))
+  .map(d => (
           <div key={d.id} style={drugRow}>
             <span>{d.name}</span>
             <input
